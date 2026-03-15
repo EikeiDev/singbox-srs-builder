@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Domain → SRS Converter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- pako (zlib) for browser -->
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #1f2937;
+      --border: #30363d;
+      --border-light: #21262d;
+      --accent: #58a6ff;
+      --accent-glow: rgba(88, 166, 255, 0.15);
+      --accent-hover: #79b8ff;
+      --success: #3fb950;
+      --success-glow: rgba(63, 185, 80, 0.15);
+      --warning: #d29922;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --text-subtle: #484f58;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(88, 166, 255, 0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 100%, rgba(63, 185, 80, 0.05) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .container { width: 100%; max-width: 820px; position: relative; }
+
+    header { text-align: center; margin-bottom: 40px; }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--accent-glow);
+      border: 1px solid rgba(88, 166, 255, 0.3);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 12px;
+      border-radius: 999px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      font-size: clamp(28px, 5vw, 42px);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #e6edf3 0%, #8b949e 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 10px;
+    }
+
+    .subtitle { color: var(--text-muted); font-size: 15px; line-height: 1.6; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(135deg, rgba(88,166,255,0.03) 0%, transparent 60%);
+      pointer-events: none;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .options-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 600px) { .options-grid { grid-template-columns: 1fr; } }
+
+    .option-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+
+    select, input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      appearance: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      padding-right: 30px;
+    }
+
+    select:focus, input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    textarea {
+      width: 100%;
+      height: 280px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      padding: 14px 16px;
+      resize: vertical;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    textarea::placeholder { color: var(--text-subtle); }
+    textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+
+    .textarea-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+    }
+
+    .counter { font-size: 12px; color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+    .counter.active { color: var(--accent); }
+    .hint { font-size: 12px; color: var(--text-subtle); }
+
+    .toggle-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+    .toggle-item { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+
+    .toggle-item input[type="checkbox"] {
+      width: 36px;
+      height: 20px;
+      cursor: pointer;
+      appearance: none;
+      -webkit-appearance: none;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      position: relative;
+      transition: background 0.2s, border-color 0.2s;
+      flex-shrink: 0;
+    }
+
+    .toggle-item input[type="checkbox"]::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--text-subtle);
+      transition: transform 0.2s, background 0.2s;
+    }
+
+    .toggle-item input[type="checkbox"]:checked { background: var(--accent-glow); border-color: var(--accent); }
+    .toggle-item input[type="checkbox"]:checked::after { transform: translateX(16px); background: var(--accent); }
+    .toggle-label { font-size: 13px; color: var(--text-muted); }
+
+    /* Stats */
+    .stats-row { display: flex; gap: 12px; margin-bottom: 16px; }
+
+    .stat-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface2);
+      border: 1px solid var(--border-light);
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .stat-pill strong { color: var(--text); font-variant-numeric: tabular-nums; }
+    .stat-pill.hidden { display: none; }
+
+    /* Format info */
+    .format-info {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(88, 166, 255, 0.07);
+      border: 1px solid rgba(88, 166, 255, 0.2);
+      border-radius: var(--radius-sm);
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 18px;
+    }
+
+    .format-info code {
+      background: var(--bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--accent);
+    }
+
+    /* Action buttons */
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 11px 22px;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-primary { background: var(--accent); color: #0d1117; }
+    .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 4px 16px rgba(88, 166, 255, 0.35); }
+    .btn-primary:active { transform: translateY(0); }
+
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--border); transform: translateY(-1px); }
+
+    .btn-success { background: var(--success); color: #0d1117; }
+    .btn-success:hover { background: #56d364; transform: translateY(-1px); box-shadow: 0 4px 16px rgba(63, 185, 80, 0.35); }
+
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+    /* Progress/status */
+    .status-bar {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      margin-top: 14px;
+    }
+
+    .status-bar.success { display: flex; background: var(--success-glow); border: 1px solid rgba(63, 185, 80, 0.3); color: var(--success); }
+    .status-bar.error { display: flex; background: rgba(248, 81, 73, 0.1); border: 1px solid rgba(248, 81, 73, 0.3); color: #f85149; }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--success);
+      color: #0d1117;
+      font-weight: 600;
+      font-size: 13px;
+      padding: 10px 20px;
+      border-radius: 999px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s;
+      opacity: 0;
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+    .divider { height: 1px; background: var(--border-light); margin: 20px 0; }
+
+    footer { text-align: center; color: var(--text-subtle); font-size: 12px; margin-top: 28px; }
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <div class="badge">
+      ⚡ sing-box · rule-set · binary
+    </div>
+    <h1>Domain → SRS Converter</h1>
+    <p class="subtitle">Вставь список доменов — получи готовый бинарный <strong>.srs</strong> файл для sing-box</p>
+  </header>
+
+  <!-- Step 1 -->
+  <div class="card">
+    <div class="card-title">📋 Шаг 1 — Вставь список доменов</div>
+    <textarea id="domainInput"
+      placeholder="example.com&#10;google.com&#10;github.com&#10;# Комментарии и пустые строки игнорируются&#10;.example.org"
+      spellcheck="false" autocomplete="off"></textarea>
+    <div class="textarea-footer">
+      <span class="counter" id="domainCounter">0 доменов</span>
+      <span class="hint">Один домен на строку · # комментарии</span>
+    </div>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="card">
+    <div class="card-title">⚙️ Шаг 2 — Настройки</div>
+    <div class="options-grid">
+      <div class="option-group">
+        <label>Тип правила</label>
+        <select id="ruleType">
+          <option value="domain_suffix" selected>domain_suffix (домен + поддомены)</option>
+          <option value="domain">domain (точное совпадение)</option>
+          <option value="domain_keyword">domain_keyword (ключевое слово)</option>
+          <option value="domain_regex">domain_regex (регулярное выражение)</option>
+        </select>
+      </div>
+      <div class="option-group">
+        <label>Версия SRS</label>
+        <select id="srsVersion">
+          <option value="1" selected>Version 1 (legacy, совместимый)</option>
+          <option value="2">Version 2</option>
+        </select>
+      </div>
+      <div class="option-group">
+        <label>Имя файла (.srs)</label>
+        <input type="text" id="fileName" value="custom-rules" placeholder="custom-rules" />
+      </div>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle-item">
+        <input type="checkbox" id="stripDots" />
+        <span class="toggle-label">Убрать ведущую точку (.example.com → example.com)</span>
+      </label>
+      <label class="toggle-item">
+        <input type="checkbox" id="dedupe" checked />
+        <span class="toggle-label">Удалить дубликаты</span>
+      </label>
+      <label class="toggle-item">
+        <input type="checkbox" id="sortDomains" />
+        <span class="toggle-label">Сортировать по алфавиту</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- Step 3: Download -->
+  <div class="card">
+    <div class="card-title">💾 Шаг 3 — Скомпилировать и скачать</div>
+
+    <div class="format-info">
+      🔵 Файл компилируется прямо в браузере в бинарный формат <code>.srs</code> — готов к использованию в sing-box без дополнительных шагов.
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-pill hidden" id="statDomains"><strong id="statDomainsVal">0</strong> доменов</div>
+      <div class="stat-pill hidden" id="statDupes"><strong id="statDupesVal">0</strong> дубликатов удалено</div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-success" id="downloadSrsBtn" disabled>
+        ⬇ Скачать .srs
+      </button>
+      <button class="btn btn-secondary" id="clearBtn">
+        🗑 Очистить
+      </button>
+    </div>
+
+    <div class="status-bar" id="statusBar">
+      <span id="statusText"></span>
+    </div>
+
+    <div class="divider"></div>
+
+    <div style="font-size:12px; color: var(--text-subtle); line-height: 1.8;">
+      <strong style="color:var(--text-muted)">Использование в конфиге sing-box:</strong><br>
+      <code style="background:var(--bg);padding:2px 8px;border-radius:4px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#79c0ff;">
+        { "type": "local", "tag": "my-rules", "format": "binary", "path": "custom-rules.srs" }
+      </code>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">✓ <span id="toastText">Скачано!</span></div>
+
+<footer>
+  Domain → SRS Converter &nbsp;·&nbsp;
+  <a href="https://sing-box.sagernet.org/configuration/rule-set/" target="_blank">sing-box Rule Set docs</a>
+</footer>
+
+<script>
+// ============================================================
+// SRS Binary Compiler (pure JS, matches sing-box stable)
+// Format: 3-byte magic "SRS" + 1-byte version + zlib(body)
+// Body: uvarint(rule_count) + rules[]
+// Rule: 1-byte type + items... + 0xFF + 1-byte invert
+// ============================================================
+
+// -------- Low-level binary helpers --------
+
+function writeUvarint(buf, val) {
+  // LEB128 unsigned
+  val = BigInt(val);
+  while (val >= 128n) {
+    buf.push(Number((val & 0x7fn) | 0x80n));
+    val >>= 7n;
+  }
+  buf.push(Number(val));
+}
+
+function writeUint8(buf, val) { buf.push(val & 0xFF); }
+
+function writeUint64BE(buf, val) {
+  // val is a BigInt
+  for (let i = 7; i >= 0; i--) {
+    buf.push(Number((val >> BigInt(i * 8)) & 0xFFn));
+  }
+}
+
+// varbin.Write for succinctSetData struct:
+// { Reserved uint8, Leaves []uint64, LabelBitmap []uint64, Labels []byte }
+// Fields written in order:
+//   uint8 reserved (0)
+//   []uint64 leaves   -> uvarint(len) + big-endian uint64 * len
+//   []uint64 labelBitmap -> uvarint(len) + big-endian uint64 * len
+//   []byte labels     -> uvarint(len) + bytes
+
+function writeSuccinctSetData(buf, leaves, labelBitmap, labels) {
+  // Reserved
+  writeUint8(buf, 0);
+
+  // Leaves: []uint64
+  writeUvarint(buf, leaves.length);
+  for (const v of leaves) writeUint64BE(buf, v);
+
+  // LabelBitmap: []uint64
+  writeUvarint(buf, labelBitmap.length);
+  for (const v of labelBitmap) writeUint64BE(buf, v);
+
+  // Labels: []byte
+  writeUvarint(buf, labels.length);
+  for (const b of labels) writeUint8(buf, b);
+}
+
+// -------- Succinct Trie (succinctSet) --------
+// Port of github.com/sagernet/sing/common/domain/set.go
+
+function setBit(bm, i) {
+  const wordI = i >> 6;
+  while (wordI >= bm.length) bm.push(0n);
+  bm[wordI] |= (1n << BigInt(i & 63));
+}
+
+function clearBit(bm, i) {
+  const wordI = i >> 6;
+  while (wordI >= bm.length) bm.push(0n);
+  // bit is 0 by default, nothing to do unless it was set. Just ensure length.
+}
+
+function newSuccinctSet(keys) {
+  // keys must be sorted
+  const leaves = [];
+  const labelBitmap = [];
+  const labels = [];
+
+  let lIdx = 0;
+  const queue = [{ s: 0, e: keys.length, col: 0 }];
+
+  function ensureBit(bm, i) {
+    while ((i >> 6) >= bm.length) bm.push(0n);
+  }
+
+  function setBitArr(bm, i, v) {
+    while ((i >> 6) >= bm.length) bm.push(0n);
+    if (v) {
+      bm[i >> 6] |= (1n << BigInt(i & 63));
+    }
+    // 0 is default
+  }
+
+  for (let qi = 0; qi < queue.length; qi++) {
+    const elt = queue[qi];
+    let s = elt.s;
+    const e = elt.e;
+    const col = elt.col;
+
+    if (col === keys[s].length) {
+      // leaf node
+      s++;
+      setBitArr(leaves, qi, 1);
+    }
+
+    for (let j = s; j < e; ) {
+      const frm = j;
+      const ch = keys[j].charCodeAt(col);
+      while (j < e && keys[j].charCodeAt(col) === ch) j++;
+      queue.push({ s: frm, e: j, col: col + 1 });
+      labels.push(ch);
+      // labelBitmap bit = 0 at lIdx
+      setBitArr(labelBitmap, lIdx, 0);
+      lIdx++;
+    }
+    // end of children: bit = 1
+    setBitArr(labelBitmap, lIdx, 1);
+    lIdx++;
+  }
+
+  // Remove trailing zeros from arrays (consistent with Go's slice behavior)
+  function trimTrailing(arr) {
+    while (arr.length > 0 && arr[arr.length - 1] === 0n) arr.pop();
+    if (arr.length === 0) return [];
+    return arr;
+  }
+
+  // Ensure both arrays are properly sized
+  // leaves needs at least enough bits for queue.length nodes
+  while ((queue.length >> 6) >= leaves.length) leaves.push(0n);
+  while ((lIdx >> 6) >= labelBitmap.length) labelBitmap.push(0n);
+
+  return {
+    leaves: trimTrailing(leaves.slice()),
+    labelBitmap: labelBitmap.slice(),
+    labels: labels,
+  };
+}
+
+// -------- Domain Matcher builder --------
+// Port of github.com/sagernet/sing/common/domain/matcher.go
+
+const CHAR_PREFIX = 13;  // '\r'
+const CHAR_ROOT   = 10;  // '\n'
+
+function reverseDomain(domain) {
+  // Reverse the string character by character (ASCII domains)
+  return domain.split('').reverse().join('');
+}
+
+function buildDomainList(domains, domainSuffix, generateLegacy) {
+  const result = [];
+  const seen = new Set();
+
+  for (let domain of domainSuffix) {
+    if (seen.has(domain)) continue;
+    seen.add(domain);
+
+    if (domain[0] === '.') {
+      // prefixLabel + domain reversed
+      result.push(reverseDomain(String.fromCharCode(CHAR_PREFIX) + domain));
+    } else if (generateLegacy) {
+      result.push(reverseDomain(domain));
+      const suffixDomain = '.' + domain;
+      if (!seen.has(suffixDomain)) {
+        seen.add(suffixDomain);
+        result.push(reverseDomain(String.fromCharCode(CHAR_PREFIX) + suffixDomain));
+      }
+    } else {
+      result.push(reverseDomain(String.fromCharCode(CHAR_ROOT) + domain));
+    }
+  }
+
+  for (let domain of domains) {
+    if (seen.has(domain)) continue;
+    seen.add(domain);
+    result.push(reverseDomain(domain));
+  }
+
+  result.sort();
+  return result;
+}
+
+function writeDomainMatcher(buf, domains, domainSuffix, generateLegacy) {
+  const keys = buildDomainList(domains, domainSuffix, generateLegacy);
+  if (keys.length === 0) {
+    // Write empty set
+    writeSuccinctSetDataToBuffer(buf, [], [], []);
+    return;
+  }
+  // Convert strings to byte arrays for the trie
+  // The trie operates on bytes (UTF-8), but for ASCII domains this is same as char codes
+  const byteKeys = keys.map(k => {
+    const arr = [];
+    for (let i = 0; i < k.length; i++) arr.push(k.charCodeAt(i));
+    return arr;
+  });
+
+  const ss = buildSuccinctSetFromByteKeys(byteKeys);
+  writeSuccinctSetDataToBuffer(buf, ss.leaves, ss.labelBitmap, ss.labels);
+}
+
+function buildSuccinctSetFromByteKeys(keys) {
+  // keys: sorted array of byte arrays
+  const leaves = [];
+  const labelBitmap = [];
+  const labels = [];
+
+  let lIdx = 0;
+
+  function setBitArr(bm, i, v) {
+    const wordI = i >> 6;
+    while (wordI >= bm.length) bm.push(0n);
+    if (v) bm[wordI] |= (1n << BigInt(i & 63));
+  }
+
+  const queue = [{ s: 0, e: keys.length, col: 0 }];
+
+  for (let qi = 0; qi < queue.length; qi++) {
+    const elt = queue[qi];
+    let { s, e, col } = elt;
+
+    if (col === keys[s].length) {
+      s++;
+      setBitArr(leaves, qi, 1);
+    }
+
+    for (let j = s; j < e; ) {
+      const frm = j;
+      const ch = keys[j][col];
+      while (j < e && keys[j][col] === ch) j++;
+      queue.push({ s: frm, e: j, col: col + 1 });
+      labels.push(ch);
+      setBitArr(labelBitmap, lIdx, 0); // 0 is default
+      lIdx++;
+    }
+    setBitArr(labelBitmap, lIdx, 1);
+    lIdx++;
+  }
+
+  // Ensure proper sizing
+  while (((queue.length - 1) >> 6) >= leaves.length) leaves.push(0n);
+  while (((lIdx - 1) >> 6) >= labelBitmap.length) labelBitmap.push(0n);
+
+  // Trim trailing zero words from leaves (but not labelBitmap)
+  const trimmedLeaves = [];
+  for (let i = 0; i < leaves.length; i++) trimmedLeaves.push(leaves[i]);
+  while (trimmedLeaves.length > 0 && trimmedLeaves[trimmedLeaves.length-1] === 0n) trimmedLeaves.pop();
+
+  return { leaves: trimmedLeaves, labelBitmap, labels };
+}
+
+function writeSuccinctSetDataToBuffer(buf, leaves, labelBitmap, labels) {
+  // Reserved uint8
+  writeUint8(buf, 0);
+
+  // Leaves []uint64
+  writeUvarint(buf, leaves.length);
+  for (const v of leaves) writeUint64BE(buf, v);
+
+  // LabelBitmap []uint64
+  writeUvarint(buf, labelBitmap.length);
+  for (const v of labelBitmap) writeUint64BE(buf, v);
+
+  // Labels []byte
+  writeUvarint(buf, labels.length);
+  for (const b of labels) writeUint8(buf, b);
+}
+
+// -------- String list (domain_keyword / domain_regex) --------
+
+function writeRuleItemString(buf, itemType, values) {
+  writeUint8(buf, itemType);
+  writeUvarint(buf, values.length);
+  for (const s of values) {
+    const encoded = new TextEncoder().encode(s);
+    writeUvarint(buf, encoded.length);
+    for (const b of encoded) writeUint8(buf, b);
+  }
+}
+
+// -------- Rule item type constants (from binary.go) --------
+const ITEM_DOMAIN         = 2;
+const ITEM_DOMAIN_KEYWORD = 3;
+const ITEM_DOMAIN_REGEX   = 4;
+const ITEM_FINAL          = 0xFF;
+const RULE_TYPE_DEFAULT   = 0;
+
+// -------- Write a default rule --------
+
+function writeDefaultRule(buf, ruleType, values, version) {
+  // Rule type byte: 0 = default
+  writeUint8(buf, RULE_TYPE_DEFAULT);
+
+  const generateLegacy = (version === 1);
+
+  if (ruleType === 'domain' || ruleType === 'domain_suffix') {
+    // Use domain trie (ruleItemDomain = 2)
+    writeUint8(buf, ITEM_DOMAIN);
+    const domains       = ruleType === 'domain'        ? values : [];
+    const domainSuffix  = ruleType === 'domain_suffix' ? values : [];
+    writeDomainMatcher(buf, domains, domainSuffix, generateLegacy);
+  } else if (ruleType === 'domain_keyword') {
+    writeRuleItemString(buf, ITEM_DOMAIN_KEYWORD, values);
+  } else if (ruleType === 'domain_regex') {
+    writeRuleItemString(buf, ITEM_DOMAIN_REGEX, values);
+  }
+
+  // Final marker
+  writeUint8(buf, ITEM_FINAL);
+  // Invert = false
+  writeUint8(buf, 0);
+}
+
+// -------- Compile to SRS --------
+
+function compileSRS(domains, ruleType, version) {
+  const body = [];
+
+  // Number of rules: 1
+  writeUvarint(body, 1);
+
+  // Write the one rule
+  writeDefaultRule(body, ruleType, domains, version);
+
+  // Compress body with zlib (pako, best compression = level 9)
+  const compressed = pako.deflate(new Uint8Array(body), { level: 9, raw: false });
+
+  // Assemble final file
+  const magic = [0x53, 0x52, 0x53]; // "SRS"
+  const result = new Uint8Array(3 + 1 + compressed.length);
+  result[0] = 0x53; result[1] = 0x52; result[2] = 0x53; // "SRS"
+  result[3] = version; // version byte
+  result.set(compressed, 4);
+
+  return result;
+}
+
+// ============================================================
+// UI Logic
+// ============================================================
+
+const domainInput   = document.getElementById('domainInput');
+const ruleTypeEl    = document.getElementById('ruleType');
+const srsVersionEl  = document.getElementById('srsVersion');
+const fileNameEl    = document.getElementById('fileName');
+const stripDotsEl   = document.getElementById('stripDots');
+const dedupeEl      = document.getElementById('dedupe');
+const sortDomainsEl = document.getElementById('sortDomains');
+const domainCounter = document.getElementById('domainCounter');
+const downloadSrsBtn= document.getElementById('downloadSrsBtn');
+const clearBtn      = document.getElementById('clearBtn');
+const statusBar     = document.getElementById('statusBar');
+const statusText    = document.getElementById('statusText');
+const statDomains   = document.getElementById('statDomains');
+const statDupes     = document.getElementById('statDupes');
+const statDomainsVal= document.getElementById('statDomainsVal');
+const statDupesVal  = document.getElementById('statDupesVal');
+
+let parsedDomains = [];
+
+function parseDomains(raw) {
+  const lines = raw.split('\n');
+  let domains = [];
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('#') || line.startsWith('//')) continue;
+    line = line.split(/\s+#/)[0].split(/\s+\/\//)[0].trim();
+    if (!line) continue;
+    if (stripDotsEl.checked && line.startsWith('.')) line = line.slice(1);
+    if (line) domains.push(line);
+  }
+
+  const originalCount = domains.length;
+
+  if (dedupeEl.checked) {
+    const seen = new Set();
+    domains = domains.filter(d => {
+      const key = d.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  const dupesRemoved = originalCount - domains.length;
+
+  if (sortDomainsEl.checked) domains.sort((a, b) => a.localeCompare(b));
+
+  return { domains, dupesRemoved };
+}
+
+function setStatus(type, msg) {
+  statusBar.className = 'status-bar ' + type;
+  statusText.textContent = msg;
+}
+
+function clearStatus() {
+  statusBar.className = 'status-bar';
+}
+
+function update() {
+  const raw = domainInput.value;
+  const { domains, dupesRemoved } = parseDomains(raw);
+  parsedDomains = domains;
+
+  domainCounter.textContent = `${domains.length} доменов`;
+  domainCounter.classList.toggle('active', domains.length > 0);
+
+  downloadSrsBtn.disabled = domains.length === 0;
+
+  statDomainsVal.textContent = domains.length;
+  statDomains.classList.toggle('hidden', domains.length === 0);
+
+  if (dupesRemoved > 0) {
+    statDupesVal.textContent = dupesRemoved;
+    statDupes.classList.remove('hidden');
+  } else {
+    statDupes.classList.add('hidden');
+  }
+
+  clearStatus();
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  document.getElementById('toastText').textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+downloadSrsBtn.addEventListener('click', () => {
+  if (parsedDomains.length === 0) return;
+
+  try {
+    clearStatus();
+    const version = parseInt(srsVersionEl.value);
+    const ruleType = ruleTypeEl.value;
+    const srsData = compileSRS(parsedDomains, ruleType, version);
+
+    const name = (fileNameEl.value.trim() || 'custom-rules').replace(/\.srs$/, '');
+    const blob = new Blob([srsData], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name + '.srs';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    setStatus('success', `✓ ${name}.srs — ${srsData.length} байт, ${parsedDomains.length} доменов, версия ${version}`);
+    showToast('Файл скачан!');
+  } catch (e) {
+    setStatus('error', '❌ Ошибка компиляции: ' + e.message);
+    console.error(e);
+  }
+});
+
+clearBtn.addEventListener('click', () => {
+  domainInput.value = '';
+  update();
+});
+
+domainInput.addEventListener('input', update);
+ruleTypeEl.addEventListener('change', update);
+srsVersionEl.addEventListener('change', update);
+stripDotsEl.addEventListener('change', update);
+dedupeEl.addEventListener('change', update);
+sortDomainsEl.addEventListener('change', update);
+
+update();
+</script>
+</body>
+</html>
